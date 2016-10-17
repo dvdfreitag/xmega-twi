@@ -3,8 +3,8 @@
 
 #include <avr/io.h>
 
-#define TWI_ACK		0x00
-#define TWI_NACK	0x01
+#define TWI_ACK		0x00U
+#define TWI_NACK	0x01U
 
 void TWI_Start(TWI_t *twi);
 void TWI_Restart(void);
