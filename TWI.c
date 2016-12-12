@@ -1,6 +1,5 @@
 #include <avr/io.h>
 
-
 #include "TWI.h"
 
 TWI_t *TWI;
@@ -12,8 +11,6 @@ void TWI_Start(TWI_t *twi)
 	IsStart = 1;
 	// Ensure the bus is enabled
 	TWI->MASTER.CTRLA = TWI_MASTER_ENABLE_bm;
-	// Make sure smart mode is enabled
-	TWI->MASTER.CTRLB = TWI_MASTER_SMEN_bm;
 	// Force the bus into IDLE state
 	TWI->MASTER.STATUS = TWI_MASTER_BUSSTATE_IDLE_gc;
 }
@@ -21,6 +18,7 @@ void TWI_Start(TWI_t *twi)
 void TWI_Restart(void)
 {	// Issue a repeated START
 	TWI->MASTER.CTRLC = TWI_MASTER_CMD_REPSTART_gc;
+	IsStart = 1;
 }
 
 void TWI_Stop(void)
@@ -40,7 +38,7 @@ uint8_t TWI_WriteByte(uint8_t data)
 		TWI->MASTER.DATA = data;
 	}
 	// Wait until the byte is shifted out
-	while (!(TWI->MASTER.STATUS & TWI_MASTER_WIF_bm));
+	while (!(TWI->MASTER.STATUS & (TWI_MASTER_WIF_bm | TWI_MASTER_RIF_bm)));
 	// Return error status if we get NACK'ed, if arbitration is lost, or if there is a general bus error
 	return ((TWI->MASTER.STATUS & (TWI_MASTER_RXACK_bm | TWI_MASTER_ARBLOST_bm | TWI_MASTER_BUSERR_bm)) == 0);
 }
@@ -53,19 +51,31 @@ uint8_t TWI_WriteBytes(uint8_t *data, uint8_t length)
 	// Transmit data
 	for (; count < length; count++)
 	{	// If we get NACK'ed, let the caller know
-		if (TWI_WriteByte(data[count]) != TWI_ACK) return count;
+		if (!TWI_WriteByte(data[count])) return count;
 	}
 	// Finally, return the number of bytes written
 	return count;
 }
 
 uint8_t TWI_ReadByte(uint8_t nack)
-{	// Set the ACKACT bit in CTRLC. Smart mode will issue this immediately after a byte is read
-	TWI->MASTER.CTRLC = (TWI->MASTER.CTRLC & ~TWI_MASTER_ACKACT_bm) | (nack << TWI_MASTER_ACKACT_bp);
-	// Initiate a read
-	uint8_t retval = TWI->MASTER.DATA;
+{	
 	// Wait until the byte is shifted in
 	while (!(TWI->MASTER.STATUS & TWI_MASTER_RIF_bm));
+	
+	// If we are done receiving,
+	if (nack)
+	{	// Set the ACKACT bit in CTRLC to indicate a NACK.
+		TWI->MASTER.CTRLC = TWI_MASTER_ACKACT_bm;
+	}
+
+	// Initiate a read
+	uint8_t retval = TWI->MASTER.DATA;
+
+	if (nack == 0)
+	{	// ACK and receive a byte
+		TWI->MASTER.CTRLC = TWI_MASTER_CMD_RECVTRANS_gc;		
+	}
+
 	// Return the read value
 	return retval;
 }
