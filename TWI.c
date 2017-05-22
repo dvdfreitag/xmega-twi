@@ -9,21 +9,24 @@ void TWI_Start(TWI_t *twi)
 {
 	TWI = twi;
 	IsStart = 1;
-	// Ensure the bus is enabled
-	TWI->MASTER.CTRLA = TWI_MASTER_ENABLE_bm;
-	// Force the bus into IDLE state
-	TWI->MASTER.STATUS = TWI_MASTER_BUSSTATE_IDLE_gc;
 }
 
 void TWI_Restart(void)
 {	// Issue a repeated START
-	TWI->MASTER.CTRLC = TWI_MASTER_CMD_REPSTART_gc;
 	IsStart = 1;
 }
 
-void TWI_Stop(void)
-{	// Issue a STOP
-	TWI->MASTER.CTRLC = TWI_MASTER_CMD_STOP_gc;
+void TWI_Stop(uint8_t nack)
+{	
+	// Issue a STOP
+	if (nack)
+	{
+		TWI->MASTER.CTRLC = TWI_MASTER_ACKACT_bm | TWI_MASTER_CMD_STOP_gc;
+	}
+	else
+	{
+		TWI->MASTER.CTRLC = TWI_MASTER_CMD_STOP_gc;
+	}
 }
 
 uint8_t TWI_WriteByte(uint8_t data)
@@ -40,7 +43,14 @@ uint8_t TWI_WriteByte(uint8_t data)
 	// Wait until the byte is shifted out
 	while (!(TWI->MASTER.STATUS & (TWI_MASTER_WIF_bm | TWI_MASTER_RIF_bm)));
 	// Return error status if we get NACK'ed, if arbitration is lost, or if there is a general bus error
-	return ((TWI->MASTER.STATUS & (TWI_MASTER_RXACK_bm | TWI_MASTER_ARBLOST_bm | TWI_MASTER_BUSERR_bm)) == 0);
+	if ((TWI->MASTER.STATUS & (TWI_MASTER_RXACK_bm | TWI_MASTER_ARBLOST_bm | TWI_MASTER_BUSERR_bm)) == 0)
+	{
+		return TWI_ACK;
+	}
+	else
+	{
+		return TWI_NACK;	
+	}
 }
 
 uint8_t TWI_WriteBytes(uint8_t *data, uint8_t length)
@@ -61,12 +71,6 @@ uint8_t TWI_ReadByte(uint8_t nack)
 {	
 	// Wait until the byte is shifted in
 	while (!(TWI->MASTER.STATUS & TWI_MASTER_RIF_bm));
-	
-	// If we are done receiving,
-	if (nack)
-	{	// Set the ACKACT bit in CTRLC to indicate a NACK.
-		TWI->MASTER.CTRLC = TWI_MASTER_ACKACT_bm;
-	}
 
 	// Initiate a read
 	uint8_t retval = TWI->MASTER.DATA;
